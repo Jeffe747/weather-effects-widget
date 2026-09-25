@@ -59,6 +59,21 @@ Omarchy/Widgets/weather-effects-widget/
 
 ## Installation
 
+### Method 1: Using `omarchy plugin add` (Recommended)
+
+Install directly from Git on any Omarchy machine:
+
+```bash
+omarchy plugin add https://github.com/Jeffe747/weather-effects-widget.git --enable
+```
+
+To update in the future:
+```bash
+omarchy plugin update jaj.weather-fx
+```
+
+### Method 2: Local Install from HomeLab
+
 Run the installer from this directory:
 
 ```bash
