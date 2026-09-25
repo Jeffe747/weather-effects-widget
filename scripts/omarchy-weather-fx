@@ -1,0 +1,247 @@
+#!/usr/bin/env bash
+
+# omarchy:summary=Manage desktop weather effect (rain, snow, storm, fog, sun, live sync)
+# omarchy:group=weather-fx
+# omarchy:args=[picker|widget|set|presence|intensity|opacity|speed|get|toggle-live|toggle|status] [value]
+# omarchy:examples=omarchy-weather-fx widget | omarchy-weather-fx set sun | omarchy-weather-fx presence 25
+
+set -euo pipefail
+
+SETTINGS_FILE="$HOME/.local/state/omarchy/settings/weather-fx.json"
+
+get_current_mode() {
+  if [[ -f "$SETTINGS_FILE" ]]; then
+    jq -r '.mode // "auto"' "$SETTINGS_FILE" 2>/dev/null || echo "auto"
+  else
+    echo "auto"
+  fi
+}
+
+get_effective() {
+  if [[ -f "$SETTINGS_FILE" ]]; then
+    jq -r '.effective // "off"' "$SETTINGS_FILE" 2>/dev/null || echo "off"
+  else
+    echo "off"
+  fi
+}
+
+update_json() {
+  local key="$1"
+  local val="$2"
+  mkdir -p "$(dirname "$SETTINGS_FILE")"
+  if [[ -f "$SETTINGS_FILE" ]]; then
+    local tmp
+    tmp=$(mktemp)
+    jq --arg k "$key" --arg v "$val" '.[$k] = (if ($v | test("^[0-9]+(\\.[0-9]+)?$")) then ($v | tonumber) else $v end)' "$SETTINGS_FILE" > "$tmp" 2>/dev/null && mv "$tmp" "$SETTINGS_FILE" || true
+  fi
+}
+
+set_mode() {
+  local target_mode="${1:-auto}"
+  target_mode=$(echo "$target_mode" | tr '[:upper:]' '[:lower:]')
+
+  omarchy-shell -q weather_fx setMode "$target_mode" 2>/dev/null || true
+  update_json "mode" "$target_mode"
+  echo "Weather effect mode set to: $target_mode"
+}
+
+set_presence() {
+  local val="${1:-35}"
+  # Normalize if passed as percentage (e.g. 35 -> 0.35)
+  if (( $(echo "$val > 1.0" | bc -l 2>/dev/null || [ "$val" -gt 1 ] 2>/dev/null && echo 1 || echo 0) )); then
+    val=$(awk "BEGIN {print $val / 100}")
+  fi
+  omarchy-shell -q weather_fx setPresence "$val" 2>/dev/null || true
+  update_json "presence" "$val"
+  echo "Weather effect presence set to: $(awk "BEGIN {print int($val * 100)}")%"
+}
+
+set_intensity() {
+  local val="${1:-30}"
+  # Normalize if passed as percentage (e.g. 30 -> 0.3)
+  if (( $(echo "$val > 1.0" | bc -l 2>/dev/null || [ "$val" -gt 1 ] 2>/dev/null && echo 1 || echo 0) )); then
+    val=$(awk "BEGIN {print $val / 100}")
+  fi
+  omarchy-shell -q weather_fx setIntensity "$val" 2>/dev/null || true
+  update_json "intensity" "$val"
+  echo "Weather effect intensity set to: $(awk "BEGIN {print int($val * 100)}")%"
+}
+
+set_opacity() {
+  local val="${1:-28}"
+  # Normalize if passed as percentage
+  if (( $(echo "$val > 1.0" | bc -l 2>/dev/null || [ "$val" -gt 1 ] 2>/dev/null && echo 1 || echo 0) )); then
+    val=$(awk "BEGIN {print $val / 100}")
+  fi
+  omarchy-shell -q weather_fx setOpacity "$val" 2>/dev/null || true
+  update_json "opacity" "$val"
+  echo "Weather effect opacity set to: $(awk "BEGIN {print int($val * 100)}")%"
+}
+
+set_speed() {
+  local val="${1:-50}"
+  # Normalize if passed as percentage
+  if (( $(echo "$val > 1.2" | bc -l 2>/dev/null || [ "$val" -gt 2 ] 2>/dev/null && echo 1 || echo 0) )); then
+    val=$(awk "BEGIN {print $val / 100}")
+  fi
+  omarchy-shell -q weather_fx setSpeed "$val" 2>/dev/null || true
+  update_json "speed" "$val"
+  echo "Weather effect speed set to: $(awk "BEGIN {print int($val * 100)}")%"
+}
+
+toggle_live() {
+  local cur
+  cur=$(get_current_mode)
+  if [[ "$cur" == "auto" ]]; then
+    set_mode "rain"
+  else
+    set_mode "auto"
+  fi
+}
+
+toggle_on_off() {
+  local eff
+  eff=$(get_effective)
+  if [[ "$eff" != "off" && "$eff" != "" ]]; then
+    set_mode "off"
+  else
+    set_mode "auto"
+  fi
+}
+
+show_status() {
+  local cur eff desc="" pres="35" int="30" op="28" sp="50"
+  cur=$(get_current_mode)
+  eff=$(get_effective)
+  if [[ -f "$SETTINGS_FILE" ]]; then
+    desc=$(jq -r '.conditionDescription // ""' "$SETTINGS_FILE" 2>/dev/null || true)
+    pres=$(jq -r '((.presence // 0.35) * 100 | round | tostring)' "$SETTINGS_FILE" 2>/dev/null || echo "35")
+    int=$(jq -r '((.intensity // 0.30) * 100 | round | tostring)' "$SETTINGS_FILE" 2>/dev/null || echo "30")
+    op=$(jq -r '((.opacity // 0.28) * 100 | round | tostring)' "$SETTINGS_FILE" 2>/dev/null || echo "28")
+    sp=$(jq -r '((.speed // 0.50) * 100 | round | tostring)' "$SETTINGS_FILE" 2>/dev/null || echo "50")
+  fi
+
+  if [[ "$cur" == "auto" ]]; then
+    if [[ -n "$desc" ]]; then
+      echo "Mode: Auto (Real weather: $desc -> Effect: $eff)"
+    else
+      echo "Mode: Auto (Active effect: $eff)"
+    fi
+  else
+    echo "Mode: Manual ($cur)"
+  fi
+  echo "Controls: Presence ${pres}% · Intensity ${int}% · Opacity ${op}% · Speed ${sp}%"
+}
+
+open_widget() {
+  omarchy-shell jaj.weather-fx.widget toggle 2>/dev/null || true
+}
+
+interactive_picker() {
+  if [[ -t 0 && -t 1 ]] && command -v gum >/dev/null 2>&1; then
+    local cur
+    cur=$(get_current_mode)
+    echo "Current Mode: $cur"
+    local choice
+    choice=$(gum choose \
+      "󰖐  Live Weather Sync (Auto)" \
+      "  Rain (Drops & Splashes)" \
+      "  Thunderstorm (Driving Gale, Lightning & Rumble)" \
+      "  Snow (Swirling Multi-Depth Flakes)" \
+      "  Mist / Fog (Parallax Scrolling Cloud Banks)" \
+      "  Sun (Volumetric God Rays & Golden Motes)" \
+      "󰖪  Off (Clear)")
+
+    case "$choice" in
+      *"Auto"*) set_mode "auto" ;;
+      *"Thunderstorm"*) set_mode "thunderstorm" ;;
+      *"Rain"*) set_mode "rain" ;;
+      *"Snow"*) set_mode "snow" ;;
+      *"Mist"*) set_mode "fog" ;;
+      *"Sun"*) set_mode "sun" ;;
+      *"Off"*) set_mode "off" ;;
+    esac
+  else
+    open_widget
+  fi
+}
+
+cmd="${1:-}"
+
+case "$cmd" in
+  widget|popup)
+    open_widget
+    ;;
+  picker|menu)
+    if [[ "${2:-}" == "--tui" ]]; then
+      interactive_picker
+    else
+      open_widget
+    fi
+    ;;
+  tui)
+    interactive_picker
+    ;;
+  set)
+    set_mode "${2:-auto}"
+    ;;
+  presence|subtle|subtlety|anonymous)
+    set_presence "${2:-35}"
+    ;;
+  intensity|density)
+    set_intensity "${2:-30}"
+    ;;
+  opacity|alpha)
+    set_opacity "${2:-28}"
+    ;;
+  speed)
+    set_speed "${2:-50}"
+    ;;
+  get)
+    get_current_mode
+    ;;
+  get-effective)
+    get_effective
+    ;;
+  toggle-live)
+    toggle_live
+    ;;
+  toggle)
+    toggle_on_off
+    ;;
+  status)
+    show_status
+    ;;
+  refresh)
+    omarchy-shell -q weather_fx refresh 2>/dev/null || true
+    echo "Refreshed weather."
+    ;;
+  -h|--help)
+    echo "Usage: omarchy-weather-fx [picker|widget|set|intensity|opacity|speed|get|toggle-live|toggle|status|refresh] [value]"
+    echo ""
+    echo "Modes:"
+    echo "  auto          Sync with real local weather"
+    echo "  rain          Staircase raindrops with ground puddle splashes"
+    echo "  thunderstorm  40° driving gale, wind slices, branching lightning & screen rumble"
+    echo "  snow          Swirling sine-wave snowflakes with wind sways"
+    echo "  fog           Multi-layer horizontal parallax scrolling mist banks"
+    echo "  sun           Volumetric pixel god rays with floating golden motes"
+    echo "  off           Disable effects"
+    ;;
+  "")
+    if [[ -t 0 && -t 1 ]]; then
+      interactive_picker
+    else
+      open_widget
+    fi
+    ;;
+  *)
+    if [[ "$cmd" =~ ^(auto|rain|thunderstorm|snow|fog|sun|off)$ ]]; then
+      set_mode "$cmd"
+    else
+      echo "Unknown command: $cmd" >&2
+      echo "Run 'omarchy-weather-fx --help' for usage." >&2
+      exit 1
+    fi
+    ;;
+esac

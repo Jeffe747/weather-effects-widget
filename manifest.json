@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "jaj.weather-fx",
+  "name": "Desktop Weather Effect",
+  "version": "1.0.0",
+  "author": "jaj",
+  "description": "Ambient rain, snow, and weather effects with navbar controls",
+  "kinds": [
+    "service",
+    "bar-widget"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "service": "Service.qml",
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Weather Effect",
+    "description": "Adjust desktop weather effects, presets, and intensity",
+    "category": "Style",
+    "defaultSection": "center",
+    "allowMultiple": false
+  }
+}
