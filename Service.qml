@@ -3,6 +3,7 @@ import Quickshell.Wayland
 import Quickshell.Io
 import QtQuick
 import QtQuick.Particles
+import QtQuick.Shapes
 
 Item {
   id: root
@@ -765,12 +766,13 @@ Item {
           visible: root.effectiveEffect === "sun"
           opacity: Math.max(0.03, Math.min(0.85, root.effectOpacity * (0.25 + 0.75 * root.presence) * 1.5))
 
-          // Diagonal Pixel God Rays from top-left corner
-          Canvas {
-            id: raysCanvas
-            width: modelData.width
-            height: modelData.height
-            property real pulse: 0.85
+          // Diagonal Pixel God Rays from top-left corner (GPU-accelerated vector geometry)
+          Shape {
+            id: raysShape
+            anchors.fill: parent
+            visible: root.effectiveEffect === "sun"
+
+            property real pulse: 1.0
 
             SequentialAnimation on pulse {
               loops: Animation.Infinite
@@ -779,31 +781,39 @@ Item {
               NumberAnimation { to: 0.85; duration: 4000; easing.type: Easing.InOutSine }
             }
 
-            onPulseChanged: requestPaint()
+            opacity: pulse
 
-            onPaint: {
-              var ctx = getContext("2d")
-              ctx.clearRect(0, 0, width, height)
-              ctx.imageSmoothingEnabled = false
+            ShapePath {
+              strokeWidth: 0
+              strokeColor: "transparent"
+              fillColor: Qt.rgba(1.0, 0.965, 0.824, 0.14)
+              startX: -80; startY: 0
+              PathLine { x: -80 + 90; y: 0 }
+              PathLine { x: modelData.width * 0.45 + 220; y: modelData.height }
+              PathLine { x: modelData.width * 0.45; y: modelData.height }
+              PathLine { x: -80; y: 0 }
+            }
 
-              // Draw stepped diagonal sunbeams
-              var beams = [
-                { startX: -80, widthTop: 90, endX: width * 0.45, widthBottom: 220, alpha: 0.14 },
-                { startX: 60, widthTop: 120, endX: width * 0.70, widthBottom: 260, alpha: 0.18 },
-                { startX: 240, widthTop: 80, endX: width * 0.95, widthBottom: 200, alpha: 0.12 }
-              ]
+            ShapePath {
+              strokeWidth: 0
+              strokeColor: "transparent"
+              fillColor: Qt.rgba(1.0, 0.965, 0.824, 0.18)
+              startX: 60; startY: 0
+              PathLine { x: 60 + 120; y: 0 }
+              PathLine { x: modelData.width * 0.70 + 260; y: modelData.height }
+              PathLine { x: modelData.width * 0.70; y: modelData.height }
+              PathLine { x: 60; y: 0 }
+            }
 
-              for (var b = 0; b < beams.length; b++) {
-                var bm = beams[b]
-                ctx.fillStyle = "rgba(255, 246, 210, " + (bm.alpha * pulse).toFixed(3) + ")"
-                ctx.beginPath()
-                ctx.moveTo(bm.startX, 0)
-                ctx.lineTo(bm.startX + bm.widthTop, 0)
-                ctx.lineTo(bm.endX + bm.widthBottom, height)
-                ctx.lineTo(bm.endX, height)
-                ctx.closePath()
-                ctx.fill()
-              }
+            ShapePath {
+              strokeWidth: 0
+              strokeColor: "transparent"
+              fillColor: Qt.rgba(1.0, 0.965, 0.824, 0.12)
+              startX: 240; startY: 0
+              PathLine { x: 240 + 80; y: 0 }
+              PathLine { x: modelData.width * 0.95 + 200; y: modelData.height }
+              PathLine { x: modelData.width * 0.95; y: modelData.height }
+              PathLine { x: 240; y: 0 }
             }
           }
 
